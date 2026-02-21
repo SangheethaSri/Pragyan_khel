@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frame Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0a0a0f;
+    --surface: #111118;
+    --border:  #1e1e2e;
+    --accent:  #00e5ff;
+    --drop:    #ff3b3b;
+    --merge:   #ffe94d;
+    --normal:  #00dc82;
+    --muted:   #44445a;
+    --text:    #e2e2f0;
+    --subtext: #7070a0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; min-height: 100vh; }
+  body::before { content:''; position:fixed; inset:0; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"); pointer-events:none; z-index:999; opacity:0.35; }
+
+  header { padding:32px 48px 20px; display:flex; align-items:baseline; gap:14px; border-bottom:1px solid var(--border); }
+  header h1 { font-size:1.5rem; font-weight:800; letter-spacing:-0.03em; }
+  header span { font-family:'Space Mono',monospace; font-size:0.7rem; color:var(--accent); border:1px solid var(--accent); padding:2px 8px; border-radius:2px; opacity:0.8; }
+
+  .container { max-width:1100px; margin:0 auto; padding:40px 48px 80px; display:flex; flex-direction:column; gap:32px; }
+
+  .section-label { font-family:'Space Mono',monospace; font-size:0.65rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--subtext); margin-bottom:14px; display:flex; align-items:center; gap:10px; }
+  .section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  .upload-zone { border:1.5px dashed var(--muted); border-radius:12px; padding:52px 32px; text-align:center; cursor:pointer; transition:border-color 0.2s,background 0.2s; position:relative; background:var(--surface); }
+  .upload-zone:hover,.upload-zone.drag { border-color:var(--accent); background:#0e0e1a; }
+  .upload-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; }
+  .upload-icon { width:48px; height:48px; margin:0 auto 16px; border:1.5px solid var(--muted); border-radius:50%; display:flex; align-items:center; justify-content:center; transition:border-color 0.2s; }
+  .upload-zone:hover .upload-icon { border-color:var(--accent); }
+  .upload-icon svg { width:22px; height:22px; stroke:var(--subtext); }
+  .upload-zone:hover .upload-icon svg { stroke:var(--accent); }
+  .upload-zone h2 { font-size:1rem; font-weight:600; margin-bottom:6px; }
+  .upload-zone p { font-size:0.78rem; color:var(--subtext); font-family:'Space Mono',monospace; }
+  #file-name { margin-top:14px; font-family:'Space Mono',monospace; font-size:0.75rem; color:var(--accent); min-height:18px; }
+
+  #progress-wrap { display:none; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:18px 24px; }
+  #progress-label { font-family:'Space Mono',monospace; font-size:0.72rem; color:var(--subtext); margin-bottom:10px; }
+  #progress-track { height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+  #progress-fill { height:100%; width:0; background:var(--accent); border-radius:2px; transition:width 0.3s ease; }
+
+  .run-btn { align-self:flex-start; background:var(--accent); color:#000; font-family:'Syne',sans-serif; font-weight:800; font-size:0.85rem; letter-spacing:0.06em; text-transform:uppercase; border:none; padding:13px 36px; border-radius:6px; cursor:pointer; transition:opacity 0.2s,transform 0.15s; display:flex; align-items:center; gap:10px; }
+  .run-btn:disabled { opacity:0.3; cursor:not-allowed; }
+  .run-btn:not(:disabled):hover { opacity:0.88; transform:translateY(-1px); }
+  .run-btn svg { width:16px; height:16px; }
+  .spinner { display:none; width:18px; height:18px; border:2px solid #000; border-top-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  #error-msg { display:none; background:#1a0000; border:1px solid var(--drop); color:var(--drop); border-radius:8px; padding:12px 18px; font-family:'Space Mono',monospace; font-size:0.75rem; white-space:pre-wrap; }
+
+  #output-section { display:none; flex-direction:column; gap:32px; }
+
+  .video-wrap { background:#000; border:1px solid var(--border); border-radius:12px; overflow:hidden; position:relative; min-height:80px; }
+  .video-loading { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:#000; color:var(--subtext); font-family:'Space Mono',monospace; font-size:0.72rem; z-index:2; }
+  .video-loading .vl-spinner { width:28px; height:28px; border:2px solid var(--muted); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; }
+  #output-video { width:100%; display:block; max-height:520px; object-fit:contain; background:#000; }
+
+  .report-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:28px 32px; display:flex; flex-direction:column; gap:28px; }
+
+  .counts { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  .count-pill { border-radius:10px; padding:20px 24px; display:flex; flex-direction:column; gap:6px; border:1px solid transparent; position:relative; overflow:hidden; }
+  .count-pill::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+  .count-pill.normal { background:#001a0d; border-color:#00dc8222; } .count-pill.normal::before { background:var(--normal); }
+  .count-pill.drop   { background:#1a0000; border-color:#ff3b3b22; } .count-pill.drop::before   { background:var(--drop); }
+  .count-pill.merge  { background:#1a1600; border-color:#ffe94d22; } .count-pill.merge::before  { background:var(--merge); }
+  .count-pill .pill-label { font-family:'Space Mono',monospace; font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; }
+  .count-pill.normal .pill-label { color:var(--normal); } .count-pill.drop .pill-label { color:var(--drop); } .count-pill.merge .pill-label { color:var(--merge); }
+  .count-pill .pill-value { font-size:2.4rem; font-weight:800; line-height:1; letter-spacing:-0.04em; }
+  .count-pill.normal .pill-value { color:var(--normal); } .count-pill.drop .pill-value { color:var(--drop); } .count-pill.merge .pill-value { color:var(--merge); }
+  .count-pill .pill-pct { font-family:'Space Mono',monospace; font-size:0.7rem; color:var(--subtext); }
+
+  .chart-title { font-family:'Space Mono',monospace; font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--subtext); margin-bottom:12px; }
+  .timeline-strip { height:28px; border-radius:4px; overflow:hidden; display:flex; border:1px solid var(--border); }
+  .timeline-strip .seg { height:100%; }
+  .timeline-strip .seg.normal { background:var(--normal); }
+  .timeline-strip .seg.drop   { background:var(--drop); }
+  .timeline-strip .seg.merge  { background:var(--merge); }
+
+  .bar-rows { display:flex; flex-direction:column; gap:10px; margin-top:16px; }
+  .bar-row { display:flex; align-items:center; gap:12px; }
+  .bar-row-label { font-family:'Space Mono',monospace; font-size:0.65rem; text-transform:uppercase; width:52px; text-align:right; flex-shrink:0; }
+  .bar-row-label.normal { color:var(--normal); } .bar-row-label.drop { color:var(--drop); } .bar-row-label.merge { color:var(--merge); }
+  .bar-track { flex:1; height:18px; background:var(--border); border-radius:3px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:3px; width:0; transition:width 1s cubic-bezier(0.16,1,0.3,1); }
+  .bar-fill.normal { background:var(--normal); } .bar-fill.drop { background:var(--drop); } .bar-fill.merge { background:var(--merge); }
+  .bar-val { font-family:'Space Mono',monospace; font-size:0.65rem; color:var(--subtext); width:36px; }
+
+  .thresh-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding-top:20px; border-top:1px solid var(--border); }
+  .thresh-item .tk { font-family:'Space Mono',monospace; font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--subtext); }
+  .thresh-item .tv { font-size:0.88rem; font-weight:600; font-family:'Space Mono',monospace; color:var(--text); }
+  .meta-strip { display:flex; gap:24px; flex-wrap:wrap; padding-top:20px; border-top:1px solid var(--border); }
+  .meta-item .mk { font-family:'Space Mono',monospace; font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--subtext); }
+  .meta-item .mv { font-size:0.88rem; font-weight:600; font-family:'Space Mono',monospace; color:var(--text); }
+
+  @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+  .fade-up { animation:fadeUp 0.5s ease both; }
+
+  @media(max-width:600px) { .container{padding:24px 20px 60px} header{padding:20px 20px 16px} .counts{grid-template-columns:1fr} .thresh-grid{grid-template-columns:1fr 1fr} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Frame Analyzer</h1>
+  <span>v2.0 · OpenCV + ffmpeg + Flask</span>
+</header>
+
+<div class="container">
+
+  <div>
+    <div class="section-label">Input Video</div>
+    <div class="upload-zone" id="drop-zone">
+      <input type="file" id="video-input" accept="video/*">
+      <div class="upload-icon">
+        <svg fill="none" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+      </div>
+      <h2>Drop your video here</h2>
+      <p>MP4 · AVI · MOV · MKV supported</p>
+      <div id="file-name"></div>
+    </div>
+  </div>
+
+  <button class="run-btn" id="run-btn" disabled>
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z"/></svg>
+    Run Analysis
+    <div class="spinner" id="spinner"></div>
+  </button>
+
+  <div id="progress-wrap">
+    <div id="progress-label">Analyzing…</div>
+    <div id="progress-track"><div id="progress-fill"></div></div>
+  </div>
+
+  <div id="error-msg"></div>
+
+  <div id="output-section">
+
+    <div class="fade-up">
+      <div class="section-label">Output Video</div>
+      <div class="video-wrap" id="video-wrap">
+        <div class="video-loading" id="video-loading">
+          <div class="vl-spinner"></div>
+          <span>Loading video…</span>
+        </div>
+        <video id="output-video" controls playsinline preload="metadata"></video>
+      </div>
+    </div>
+
+    <div class="fade-up">
+      <div class="section-label">Analysis Report</div>
+      <div class="report-card">
+
+        <div class="counts">
+          <div class="count-pill normal"><span class="pill-label">Normal</span><span class="pill-value" id="cnt-normal">—</span><span class="pill-pct" id="pct-normal"></span></div>
+          <div class="count-pill drop">  <span class="pill-label">Drop</span>  <span class="pill-value" id="cnt-drop">—</span>  <span class="pill-pct" id="pct-drop"></span></div>
+          <div class="count-pill merge"> <span class="pill-label">Merge</span> <span class="pill-value" id="cnt-merge">—</span> <span class="pill-pct" id="pct-merge"></span></div>
+        </div>
+
+        <div>
+          <div class="chart-title">Frame Distribution</div>
+          <div class="timeline-strip" id="timeline-strip"></div>
+          <div class="bar-rows">
+            <div class="bar-row"><span class="bar-row-label normal">Normal</span><div class="bar-track"><div class="bar-fill normal" id="bar-normal"></div></div><span class="bar-val" id="bv-normal"></span></div>
+            <div class="bar-row"><span class="bar-row-label drop">Drop</span>    <div class="bar-track"><div class="bar-fill drop"   id="bar-drop"></div></div>  <span class="bar-val" id="bv-drop"></span></div>
+            <div class="bar-row"><span class="bar-row-label merge">Merge</span>  <div class="bar-track"><div class="bar-fill merge"  id="bar-merge"></div></div> <span class="bar-val" id="bv-merge"></span></div>
+          </div>
+        </div>
+
+        <div class="thresh-grid" id="thresh-grid"></div>
+        <div class="meta-strip"  id="meta-strip"></div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const videoInput    = document.getElementById('video-input');
+const dropZone      = document.getElementById('drop-zone');
+const fileNameEl    = document.getElementById('file-name');
+const runBtn        = document.getElementById('run-btn');
+const spinner       = document.getElementById('spinner');
+const errMsg        = document.getElementById('error-msg');
+const progressWrap  = document.getElementById('progress-wrap');
+const progressFill  = document.getElementById('progress-fill');
+const progressLabel = document.getElementById('progress-label');
+
+let selectedFile = null;
+
+videoInput.addEventListener('change', () => { if (videoInput.files[0]) selectFile(videoInput.files[0]); });
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+});
+
+function selectFile(f) {
+  selectedFile = f;
+  fileNameEl.textContent = '▸ ' + f.name + '  (' + (f.size / 1e6).toFixed(1) + ' MB)';
+  runBtn.disabled = false;
+  hideError();
+  document.getElementById('output-section').style.display = 'none';
+}
+
+runBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  setLoading(true);
+  hideError();
+  showProgress('Uploading video…', 10);
+
+  try {
+    const formData = new FormData();
+    formData.append('video', selectedFile);
+
+    let prog = 10;
+    const ticker = setInterval(() => { prog = Math.min(prog + 3, 88); showProgress('Analyzing & encoding…', prog); }, 700);
+
+    const res = await fetch('/analyze', { method: 'POST', body: formData });
+    clearInterval(ticker);
+    showProgress('Finalizing…', 96);
+
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Server error');
+
+    showProgress('Done!', 100);
+    await sleep(300);
+    hideProgress();
+    renderReport(data);
+
+  } catch (e) {
+    hideProgress();
+    showError('Error: ' + e.message + '\n\nMake sure server.py is running and ffmpeg is installed.');
+  } finally {
+    setLoading(false);
+  }
+});
+
+function loadVideo(videoUrl) {
+  const vid     = document.getElementById('output-video');
+  const loading = document.getElementById('video-loading');
+
+  loading.style.display = 'flex';
+
+  // Fully reset the video element
+  vid.pause();
+  vid.removeAttribute('src');
+  vid.load();
+
+  const src = videoUrl + '?t=' + Date.now();
+
+  vid.addEventListener('canplay', () => {
+    loading.style.display = 'none';
+  }, { once: true });
+
+  vid.addEventListener('error', (e) => {
+    loading.style.display = 'none';
+    showError('Video playback error: ' + (vid.error ? vid.error.message : 'unknown') +
+              '\nMake sure ffmpeg is installed on the server: sudo apt install ffmpeg');
+  }, { once: true });
+
+  vid.src = src;
+  vid.load();
+}
+
+function renderReport(data) {
+  const { labels, counts, thresholds, fps, width, height, video_url } = data;
+  const total = counts.TOTAL;
+
+  loadVideo(video_url);
+
+  document.getElementById('cnt-normal').textContent = counts.NORMAL;
+  document.getElementById('cnt-drop').textContent   = counts.DROP;
+  document.getElementById('cnt-merge').textContent  = counts.MERGE;
+  document.getElementById('pct-normal').textContent = pct(counts.NORMAL, total) + '% of frames';
+  document.getElementById('pct-drop').textContent   = pct(counts.DROP,   total) + '% of frames';
+  document.getElementById('pct-merge').textContent  = pct(counts.MERGE,  total) + '% of frames';
+
+  const strip = document.getElementById('timeline-strip');
+  strip.innerHTML = '';
+  let i = 0;
+  while (i < labels.length) {
+    let j = i;
+    while (j < labels.length && labels[j] === labels[i]) j++;
+    const seg = document.createElement('div');
+    seg.className = 'seg ' + labels[i].toLowerCase();
+    seg.style.flex = String(j - i);
+    seg.title = labels[i] + ' (' + (j - i) + ' frames)';
+    strip.appendChild(seg);
+    i = j;
+  }
+
+  setTimeout(() => {
+    const max = Math.max(counts.NORMAL, counts.DROP, counts.MERGE, 1);
+    setBar('normal', counts.NORMAL, max);
+    setBar('drop',   counts.DROP,   max);
+    setBar('merge',  counts.MERGE,  max);
+  }, 80);
+
+  document.getElementById('thresh-grid').innerHTML = `
+    <div class="thresh-item"><span class="tk">Drop Threshold</span><span class="tv">${thresholds.motion_drop}</span></div>
+    <div class="thresh-item"><span class="tk">Merge Threshold</span><span class="tv">${thresholds.motion_merge}</span></div>
+    <div class="thresh-item"><span class="tk">Blur Threshold</span><span class="tv">${thresholds.blur}</span></div>`;
+
+  const health = counts.DROP + counts.MERGE;
+  const hLabel = health === 0 ? 'CLEAN' : counts.DROP > 5 ? 'DEGRADED' : 'WARNING';
+  const hColor = health === 0 ? 'var(--normal)' : counts.DROP > 5 ? 'var(--drop)' : 'var(--merge)';
+  document.getElementById('meta-strip').innerHTML = `
+    <div class="meta-item"><span class="mk">Total Frames</span><span class="mv">${total}</span></div>
+    <div class="meta-item"><span class="mk">FPS</span><span class="mv">${fps}</span></div>
+    <div class="meta-item"><span class="mk">Resolution</span><span class="mv">${width}×${height}</span></div>
+    <div class="meta-item"><span class="mk">Drop Rate</span><span class="mv">${pct(counts.DROP, total)}%</span></div>
+    <div class="meta-item"><span class="mk">Merge Rate</span><span class="mv">${pct(counts.MERGE, total)}%</span></div>
+    <div class="meta-item"><span class="mk">Health</span><span class="mv" style="color:${hColor}">${hLabel}</span></div>`;
+
+  const section = document.getElementById('output-section');
+  section.style.display = 'flex';
+  section.style.flexDirection = 'column';
+  section.style.gap = '32px';
+  section.querySelectorAll('.fade-up').forEach((el, i) => {
+    el.style.animation = 'none'; el.offsetHeight;
+    el.style.animation = `fadeUp 0.5s ease ${i * 0.08}s both`;
+  });
+}
+
+function setBar(type, val, max) {
+  document.getElementById('bar-' + type).style.width = (val / max * 100) + '%';
+  document.getElementById('bv-'  + type).textContent  = val;
+}
+function pct(n, total) { return total ? (n / total * 100).toFixed(1) : '0.0'; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function setLoading(on) {
+  runBtn.disabled = on;
+  spinner.style.display = on ? 'block' : 'none';
+  runBtn.querySelector('svg').style.display = on ? 'none' : 'block';
+}
+function showProgress(msg, p) { progressWrap.style.display = 'block'; progressLabel.textContent = msg; progressFill.style.width = p + '%'; }
+function hideProgress() { progressWrap.style.display = 'none'; progressFill.style.width = '0'; }
+function showError(msg) { errMsg.textContent = msg; errMsg.style.display = 'block'; }
+function hideError() { errMsg.style.display = 'none'; }
+</script>
+</body>
+</html>
